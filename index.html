@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FSK Receiver</title>
+  <style>
+    body { font-family: monospace; text-align: center; padding: 20px; }
+    #bits { word-wrap: break-word; border: 1px solid black; padding: 10px; margin-top: 20px; }
+    button { font-size: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body>
+
+<h2>FSK Receiver (1000Hz / 2000Hz)</h2>
+<button onclick="start()">Start</button>
+
+<div id="bits"></div>
+
+<script>
+let audioContext;
+let analyser;
+let dataArray;
+let sampleRate;
+let bits = "";
+
+const f0 = 1000;
+const f1 = 2000;
+
+function start() {
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    sampleRate = audioContext.sampleRate;
+
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+
+    source.connect(analyser);
+
+    const bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+
+    listen();
+  });
+}
+
+function listen() {
+  analyser.getByteFrequencyData(dataArray);
+
+  const freqStep = sampleRate / analyser.fftSize;
+
+  let maxIndex = 0;
+  for (let i = 1; i < dataArray.length; i++) {
+    if (dataArray[i] > dataArray[maxIndex]) {
+      maxIndex = i;
+    }
+  }
+
+  const detectedFreq = maxIndex * freqStep;
+
+  let bit;
+  if (Math.abs(detectedFreq - f0) < Math.abs(detectedFreq - f1)) {
+    bit = "0";
+  } else {
+    bit = "1";
+  }
+
+  bits += bit;
+  document.getElementById("bits").innerText = bits;
+
+  requestAnimationFrame(listen);
+}
+</script>
+
+</body>
+</html>
