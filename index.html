@@ -1,18 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>FSK Receiver</title>
-  <style>
-    body { font-family: monospace; text-align: center; padding: 20px; }
-    #bits { word-wrap: break-word; border: 1px solid black; padding: 10px; margin-top: 20px; }
-    button { font-size: 20px; padding: 10px 20px; }
-  </style>
+<meta charset="UTF-8">
+<title>FSK Receiver</title>
+<style>
+body { font-family: monospace; text-align: center; padding: 20px; }
+#bits { word-wrap: break-word; border: 1px solid black; padding: 10px; margin-top: 20px; min-height: 60px;}
+button { font-size: 18px; padding: 10px 20px; margin: 5px;}
+</style>
 </head>
 <body>
 
 <h2>FSK Receiver (1000Hz / 2000Hz)</h2>
+
 <button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
+<button onclick="clearBits()">Clear</button>
 
 <div id="bits"></div>
 
@@ -21,54 +24,78 @@ let audioContext;
 let analyser;
 let dataArray;
 let sampleRate;
+let intervalId;
 let bits = "";
+let running = false;
 
 const f0 = 1000;
 const f1 = 2000;
+const BIT_DURATION = 50; // ms
+const MIN_POWER = 50; // seuil anti-bruit
 
-function start() {
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    sampleRate = audioContext.sampleRate;
+async function start() {
+  if (running) return;
 
-    const source = audioContext.createMediaStreamSource(stream);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    source.connect(analyser);
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  sampleRate = audioContext.sampleRate;
 
-    const bufferLength = analyser.frequencyBinCount;
-    dataArray = new Uint8Array(bufferLength);
+  const source = audioContext.createMediaStreamSource(stream);
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 2048;
 
-    listen();
-  });
+  source.connect(analyser);
+
+  const bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+
+  running = true;
+  intervalId = setInterval(detectBit, BIT_DURATION);
 }
 
-function listen() {
+function stop() {
+  running = false;
+  clearInterval(intervalId);
+  if (audioContext) audioContext.close();
+}
+
+function clearBits() {
+  bits = "";
+  document.getElementById("bits").innerText = bits;
+}
+
+function detectBit() {
   analyser.getByteFrequencyData(dataArray);
 
   const freqStep = sampleRate / analyser.fftSize;
 
   let maxIndex = 0;
-  for (let i = 1; i < dataArray.length; i++) {
-    if (dataArray[i] > dataArray[maxIndex]) {
+  let maxValue = 0;
+
+  for (let i = 0; i < dataArray.length; i++) {
+    if (dataArray[i] > maxValue) {
+      maxValue = dataArray[i];
       maxIndex = i;
     }
   }
 
+  if (maxValue < MIN_POWER) return; // ignore silence/bruit faible
+
   const detectedFreq = maxIndex * freqStep;
 
-  let bit;
-  if (Math.abs(detectedFreq - f0) < Math.abs(detectedFreq - f1)) {
+  let bit = null;
+
+  if (Math.abs(detectedFreq - f0) < 150) {
     bit = "0";
-  } else {
+  } else if (Math.abs(detectedFreq - f1) < 150) {
     bit = "1";
   }
 
-  bits += bit;
-  document.getElementById("bits").innerText = bits;
-
-  requestAnimationFrame(listen);
+  if (bit !== null) {
+    bits += bit;
+    document.getElementById("bits").innerText = bits;
+  }
 }
 </script>
 
